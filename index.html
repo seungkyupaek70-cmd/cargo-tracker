@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>화물 추적 도구</title>
+    <style>
+      :root {
+        --bg: #f4f8ff;
+        --surface: #ffffff;
+        --text: #14213d;
+        --muted: #64748b;
+        --primary: #2563eb;
+        --primary-dark: #1d4ed8;
+        --border: #dfe8f7;
+        --success: #0f766e;
+        --warning: #b45309;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Segoe UI", "Apple SD Gothic Neo", sans-serif;
+        background: linear-gradient(135deg, #f8fbff 0%, var(--bg) 100%);
+        color: var(--text);
+        min-height: 100vh;
+      }
+
+      .app {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+
+      .hero {
+        background: linear-gradient(135deg, var(--primary) 0%, #3b82f6 25%, #7c3aed 100%);
+        color: white;
+        border-radius: 24px;
+        padding: 28px;
+        box-shadow: 0 16px 40px rgba(37, 99, 235, 0.18);
+      }
+
+      .hero h1 { margin: 0 0 8px; font-size: 28px; }
+      .hero p { margin: 0; opacity: 0.95; line-height: 1.6; }
+
+      .panel {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        padding: 20px;
+        margin-top: 18px;
+        box-shadow: 0 10px 24px rgba(20, 33, 61, 0.05);
+      }
+
+      .search-row {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: 12px;
+      }
+
+      .search-row input {
+        flex: 1;
+        min-width: 240px;
+        padding: 12px 14px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        font-size: 15px;
+        outline: none;
+      }
+
+      .search-row input:focus {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+      }
+
+      button {
+        padding: 12px 16px;
+        border: none;
+        border-radius: 12px;
+        background: var(--primary);
+        color: white;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      button:hover { background: var(--primary-dark); }
+
+      .hint { margin-top: 8px; color: var(--muted); font-size: 13px; }
+
+      .status {
+        margin-top: 12px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        display: none;
+        font-size: 14px;
+      }
+
+      .status.show { display: block; }
+      .status.success { background: #f0fdf9; color: var(--success); }
+      .status.error { background: #fff7ed; color: var(--warning); }
+
+      .result-card {
+        margin-top: 16px;
+        padding: 16px;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: #fcfeff;
+      }
+
+      .result-card h3 { margin-top: 0; }
+      .meta {
+        display: grid;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .meta-item {
+        padding: 10px 12px;
+        border-radius: 12px;
+        background: #f8fbff;
+        border: 1px solid var(--border);
+      }
+
+      .empty { color: var(--muted); }
+      .footer { margin-top: 14px; color: var(--muted); font-size: 12px; text-align: center; }
+
+      @media (max-width: 700px) {
+        .app { padding: 14px; }
+        .hero { padding: 22px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <section class="hero">
+        <h1>화물 추적 도구</h1>
+        <p>PACKAGE NO를 입력하면 어느 선적에 포함되어 있는지 찾고, 입고 예정일을 보여줍니다.</p>
+      </section>
+
+      <section class="panel">
+        <h3>PACKAGE NO 조회</h3>
+        <div class="search-row">
+          <input id="packageInput" type="text" placeholder="예: 260834258" inputmode="numeric" />
+          <button id="searchBtn" type="button">조회</button>
+        </div>
+        <div class="hint">데이터는 매주 갱신됩니다.</div>
+        <div id="status" class="status"></div>
+      </section>
+
+      <section id="resultArea" class="result-card">
+        <div class="empty">조회 결과가 여기에 표시됩니다.</div>
+      </section>
+
+      <div id="footer" class="footer"></div>
+    </div>
+
+    <script src="data.js"></script>
+    <script>
+      const packageInput = document.getElementById('packageInput');
+      const searchBtn = document.getElementById('searchBtn');
+      const status = document.getElementById('status');
+      const resultArea = document.getElementById('resultArea');
+      const footer = document.getElementById('footer');
+
+      let db = null;
+
+      function showStatus(message, type = 'success') {
+        status.textContent = message;
+        status.className = `status show ${type}`;
+      }
+
+      function loadData() {
+        if (db) return db;
+        if (!window.CARGO_DATA) throw new Error('data.js 로드 실패');
+        db = window.CARGO_DATA;
+        footer.textContent = `데이터 기준: ${db.generatedAt} · 선적 ${db.shipments.length}건`;
+        return db;
+      }
+
+      function findPackage(packageNo) {
+        for (const shipment of db.shipments) {
+          if (shipment.packages.includes(packageNo)) {
+            return shipment;
+          }
+        }
+        return null;
+      }
+
+      async function searchPackage() {
+        const packageNo = packageInput.value.trim();
+        if (!packageNo) {
+          showStatus('PACKAGE NO를 입력해주세요.', 'error');
+          resultArea.innerHTML = '<div class="empty">조회할 PACKAGE NO를 입력하세요.</div>';
+          return;
+        }
+
+        showStatus('조회 중입니다...', 'success');
+
+        try {
+          loadData();
+          const shipment = findPackage(packageNo);
+
+          if (!shipment) {
+            showStatus('해당 PACKAGE NO를 찾지 못했습니다.', 'error');
+            resultArea.innerHTML = '<div class="empty">일치하는 패키지가 없습니다. 번호를 확인해주세요.</div>';
+            return;
+          }
+
+          resultArea.innerHTML = `
+            <h3>조회 결과</h3>
+            <div class="meta">
+              <div class="meta-item"><strong>PACKAGE NO:</strong> ${packageNo}</div>
+              <div class="meta-item"><strong>선적명:</strong> ${shipment.scheduleName}</div>
+              <div class="meta-item"><strong>입고일자:</strong> ${shipment.arrivalDate || '미정'}</div>
+            </div>
+          `;
+          showStatus('조회가 완료되었습니다.', 'success');
+        } catch (error) {
+          console.error(error);
+          showStatus('데이터를 불러오지 못했습니다.', 'error');
+          resultArea.innerHTML = '<div class="empty">data.js를 읽지 못했습니다. index.html과 같은 폴더에 data.js가 있는지 확인하세요.</div>';
+        }
+      }
+
+      searchBtn.addEventListener('click', searchPackage);
+      packageInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') searchPackage();
+      });
+
+      try { loadData(); } catch (e) { console.error(e); }
+    </script>
+  </body>
+</html>
